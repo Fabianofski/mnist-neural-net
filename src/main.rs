@@ -20,20 +20,28 @@ fn save_as_image(label: u8, record: Vec<u8>) -> Result<(), Box<dyn std::error::E
 
 fn record_to_data(record: StringRecord) -> (u8, Vec<f64>) {
     let label = record[0].parse::<u8>().unwrap();
-    let pixels = record.iter().skip(1).map(|x| x.parse::<f64>().unwrap() / 255.0).collect();
+    let pixels = record
+        .iter()
+        .skip(1)
+        .map(|x| x.parse::<f64>().unwrap() / 255.0)
+        .collect();
     (label, pixels)
 }
 
 fn main() {
-    let mut rdr = csv::Reader::from_path("src/mnist_test.csv").unwrap();
-    let record = rdr.records().next().unwrap();
-
-    let record = record.unwrap();
-    let (label, pixels) = record_to_data(record);
-
     let model: Model = Model::new(vec![784, 16, 16, 10]);
-    let (pred_label, pred_score) = model.predict(pixels.clone());
-    println!("Ground Truth: {}, Predicted: {}, Score: {}", label, pred_label, pred_score);
+
+    let mut rdr = csv::Reader::from_path("src/mnist_test.csv").unwrap();
+    for record in rdr.records() {
+        let data = record.unwrap();
+        let (label, pixels) = record_to_data(data);
+
+        let (pred_label, pred_score) = model.predict(pixels.clone());
+        println!(
+            "Ground Truth: {}, Predicted: {}, Score: {}",
+            label, pred_label, pred_score
+        );
+    }
 }
 
 #[cfg(test)]

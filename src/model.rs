@@ -2,8 +2,8 @@ use rand::Rng;
 
 #[derive(Debug)]
 pub struct Model {
-    pub weights: Vec<f64>,
-    pub biases: Vec<f64>,
+    pub weights: Vec<Vec<f64>>,
+    pub biases: Vec<Vec<f64>>,
     pub layer_sizes: Vec<u32>,
 }
 
@@ -20,15 +20,18 @@ impl Model {
     }
 
     pub fn new(layer_sizes: Vec<u32>) -> Model {
-        let biases_size: u32 = layer_sizes.iter().skip(1).sum();
-        let mut weights_size: u32 = 0;
-        for i in 0..layer_sizes.len() - 1 {
-            weights_size += layer_sizes[i] * layer_sizes[i + 1];
+        let mut biases: Vec<Vec<f64>> = Vec::new();
+        let mut weights: Vec<Vec<f64>> = Vec::new();
+
+        for biases_size in layer_sizes.iter().skip(1) {
+            biases.push(Model::generate_rand(*biases_size));
         }
 
-        println!("Weights: {}, Biases: {}", weights_size, biases_size);
-        let weights = Model::generate_rand(weights_size);
-        let biases = Model::generate_rand(biases_size);
+        for i in 0..layer_sizes.len() - 1 {
+            let weights_size = layer_sizes[i] * layer_sizes[i + 1];
+            weights.push(Model::generate_rand(weights_size));
+        }
+
         Model {
             weights,
             biases,
@@ -36,11 +39,11 @@ impl Model {
         }
     }
 
-    fn calculate_activation(&self, activations: &Vec<f64>, weights: &[f64], bias: &f64) -> f64 {
+    fn calculate_activation(&self, activations: &Vec<f64>, weights: &Vec<f64>, bias: &f64) -> f64 {
         let mut activation = 0.0;
 
         for i in 0..activations.len() {
-            activation += activations[i] * weights[0];
+            activation += activations[i] * weights[i];
         }
 
         activation += bias;
@@ -61,20 +64,15 @@ impl Model {
 
     pub fn predict(&self, pixels: Vec<f64>) -> (u8, f64) {
         let mut previous_activations: Vec<f64> = pixels;
-        let mut weight_idx = 0;
-        let mut bias_idx = 0;
-        for layer_size in self.layer_sizes.iter().skip(1) {
+        for (i, layer_size) in self.layer_sizes.iter().skip(1).enumerate() {
+            let weights = self.weights[i].clone();
+            let biases = self.biases[i].clone();
+
             let mut activations: Vec<f64> = Vec::new();
-            for _ in 0..*layer_size {
-                let weight_end = weight_idx + &previous_activations.len();
-                let weights = &self.weights[weight_idx..weight_end];
-                let bias = &self.biases[bias_idx];
-
-                let activation = self.calculate_activation(&previous_activations, weights, bias);
+            for j in 0..*layer_size {
+                let bias = biases[j as usize];
+                let activation = self.calculate_activation(&previous_activations, &weights, &bias);
                 activations.push(activation);
-
-                weight_idx = weight_end;
-                bias_idx += 1;
             }
             previous_activations = activations;
         }
