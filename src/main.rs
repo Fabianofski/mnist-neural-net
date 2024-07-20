@@ -30,7 +30,7 @@ fn record_to_data(record: StringRecord) -> (u8, Vec<f64>) {
 
 fn main() {
     let model: Model = Model::new(vec![784, 16, 16, 10]);
-    let batch_size = 32;
+    let batch_size = 1;
     let mut inputs: Vec<Vec<f64>> = Vec::new();
     let mut labels: Vec<u8> = Vec::new();
 
@@ -56,12 +56,12 @@ mod tests {
 
     #[test]
     fn test_record_to_data() {
-        let vec = vec!["3", "5", "2", "6", "8", "10"];
+        let vec = vec!["3", "255", "127.5", "255", "63.75"];
         let record: StringRecord = StringRecord::from(vec);
 
         let (label, pixels) = record_to_data(record);
 
         assert_eq!(label, 3);
-        assert_eq!(pixels, vec![5.0, 2.0, 6.0, 8.0, 10.0]);
+        assert_eq!(pixels, vec![1.0, 0.5, 1.0, 0.25]);
     }
 }
