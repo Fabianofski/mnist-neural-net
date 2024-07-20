@@ -30,18 +30,24 @@ fn record_to_data(record: StringRecord) -> (u8, Vec<f64>) {
 
 fn main() {
     let model: Model = Model::new(vec![784, 16, 16, 10]);
+    let batch_size = 32;
+    let mut inputs: Vec<Vec<f64>> = Vec::new();
+    let mut labels: Vec<u8> = Vec::new();
 
     let mut rdr = csv::Reader::from_path("src/mnist_test.csv").unwrap();
-    for record in rdr.records() {
+    for (i, record) in rdr.records().enumerate() {
         let data = record.unwrap();
         let (label, pixels) = record_to_data(data);
 
-        let (pred_label, pred_score) = model.predict(pixels.clone());
-        println!(
-            "Ground Truth: {}, Predicted: {}, Score: {}",
-            label, pred_label, pred_score
-        );
+        inputs.push(pixels);
+        labels.push(label);
+
+        if i == batch_size - 1 {
+            break;
+        }
     }
+
+    model.update_mini_batch(inputs, labels, 0.0001);
 }
 
 #[cfg(test)]
