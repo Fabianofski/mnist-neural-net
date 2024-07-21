@@ -30,7 +30,7 @@ impl Model {
         for i in 0..layer_sizes.len() - 1 {
             let mut layer_weights: Vec<Vec<f64>> = Vec::new();
             for _ in 0..layer_sizes[i] {
-                layer_weights.push(Model::generate_rand(layer_sizes[i + 1]));
+                layer_weights.push(Model::generate_rand(layer_sizes[i]));
             }
             weights.push(layer_weights);
         }
@@ -80,9 +80,9 @@ impl Model {
             let biases = self.biases[i].clone();
 
             let mut layer_activations: Vec<f64> = Vec::new();
-            for j in 0..*layer_size {
-                let bias = biases[j as usize];
-                let activation_weights = weights[j as usize].clone();
+            for j in 0..*layer_size as usize {
+                let bias = biases[j];
+                let activation_weights = weights[j].clone();
                 let activation = self.calculate_activation(
                     &activations[i],
                     &activation_weights,
@@ -95,6 +95,81 @@ impl Model {
         }
 
         activations
+    }
+
+    fn delta(&self, output_layer: &Vec<f64>, label: u8) -> Vec<f64> {
+        let mut delta: Vec<f64> = Vec::new();
+        for (i, node) in output_layer.iter().enumerate() {
+            let desired = if i as u8 == label { 1.0 } else { 0.0 };
+            delta.push(node - desired);
+        }
+        delta
+    }
+
+    fn calc_weights_dot(&self, delta: &Vec<f64>, activations: &Vec<f64>) -> Vec<Vec<f64>> {
+        let mut grads: Vec<Vec<f64>> = Vec::new();
+        for desired in delta.iter() {
+            let mut grad: Vec<f64> = Vec::new();
+            for node in activations.iter() {
+                grad.push(node * desired);
+            }
+            grads.push(grad);
+        }
+        grads
+    }
+
+    fn transpose(&self, matrix: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
+        let mut transposed: Vec<Vec<f64>> = vec![vec![0.0; matrix.len()]; matrix[0].len()];
+
+        for (i, row) in matrix.iter().enumerate() {
+            for (j, &val) in row.iter().enumerate() {
+                transposed[j][i] = val;
+            }
+        }
+
+        transposed
+    }
+
+    fn calc_biases_dot(&self, weights: &Vec<Vec<f64>>, delta: &Vec<f64>) -> Vec<f64> {
+        let mut grads: Vec<f64> = Vec::new();
+        let weights_t = self.transpose(weights);
+        for (_, weight) in weights_t.iter().enumerate() {
+            let mut sum = 0.0;
+            for (j, node) in weight.iter().enumerate() {
+                sum += node * delta[j];
+            }
+            grads.push(sum);
+        }
+        grads
+    }
+
+    pub fn backprop(&self, input: Vec<f64>, label: u8) -> (Vec<Vec<Vec<f64>>>, Vec<Vec<f64>>) {
+        let layers = self.layer_sizes.len();
+        let mut grads_w: Vec<Vec<Vec<f64>>> = vec![Vec::new(); layers - 1];
+        let mut grads_b: Vec<Vec<f64>> = vec![Vec::new(); layers - 1];
+
+        let activations = self.feed_forward(input.clone(), true);
+        let zs: Vec<Vec<f64>> = self.feed_forward(input.clone(), false);
+
+        let mut delta = self.delta(&activations[layers - 1], label);
+        grads_b[layers - 2] = delta.clone();
+        grads_w[layers - 2] = self.calc_weights_dot(&delta, &activations[layers - 2]);
+
+        for l in (2..(layers)).rev() {
+            let z = zs[l - 1].clone();
+            let mut new_delta: Vec<f64> = self.calc_biases_dot(&self.weights[l - 1], &delta);
+            for i in 0..new_delta.len() {
+                // ReLU derivative
+                new_delta[i] *= if z[i] > 0.0 { 1.0 } else { 0.0 };
+            }
+
+            grads_b[l - 2] = new_delta.clone();
+            grads_w[l - 2] = self.calc_weights_dot(&new_delta, &activations[l - 2]);
+
+            delta = new_delta;
+        }
+
+        (grads_w, grads_b)
     }
 
     fn gradient_descent_step(
@@ -124,79 +199,6 @@ impl Model {
             .collect()
     }
 
-    fn delta(&self, output_layer: &Vec<f64>, label: u8) -> Vec<f64> {
-        let mut delta: Vec<f64> = Vec::new();
-        for (i, node) in output_layer.iter().enumerate() {
-            let desired = if i as u8 == label { 1.0 } else { 0.0 };
-            delta.push(node - desired);
-        }
-        delta
-    }
-
-    fn calc_weights_dot(&self, delta: &Vec<f64>, activations: &Vec<f64>) -> Vec<f64> {
-        let mut grads: Vec<f64> = Vec::new();
-        for node in activations.iter() {
-            for desired in delta.iter() {
-                grads.push(node * desired);
-            }
-        }
-        grads
-    }
-
-    fn transpose(&self, matrix: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
-        let mut transposed: Vec<Vec<f64>> = vec![vec![0.0; matrix.len()]; matrix[0].len()];
-
-        for (i, row) in matrix.iter().enumerate() {
-            for (j, &val) in row.iter().enumerate() {
-                transposed[j][i] = val;
-            }
-        }
-
-        transposed
-    }
-    fn calc_biases_dot(&self, weights: &Vec<Vec<f64>>, delta: &Vec<f64>) -> Vec<f64> {
-        let mut grads: Vec<f64> = Vec::new();
-        let weights_t = self.transpose(weights);
-        for (_, weight) in weights_t.iter().enumerate() {
-            let mut sum = 0.0;
-            for (j, node) in weight.iter().enumerate() {
-                sum += node * delta[j];
-            }
-            grads.push(sum);
-        }
-        grads
-    }
-
-    pub fn backprop(&self, input: Vec<f64>, label: u8) -> (Vec<Vec<Vec<f64>>>, Vec<Vec<f64>>) {
-        let layers = self.layer_sizes.len();
-        let mut grads_w: Vec<Vec<Vec<f64>>> = vec![Vec::new(); layers - 1];
-        let mut grads_b: Vec<Vec<f64>> = vec![Vec::new(); layers - 1];
-
-        let activations = self.feed_forward(input.clone(), true);
-        println!("Activations: {:?}", activations);
-        let zs: Vec<Vec<f64>> = self.feed_forward(input.clone(), false);
-
-        let mut delta = self.delta(&activations[layers - 1], label);
-        grads_b[layers - 2] = delta.clone();
-        // grads_w[layers - 2] = self.calc_weights_dot(&delta, &activations[layers - 2]);
-
-        for l in (2..(layers)).rev() {
-            let z = zs[l - 1].clone();
-            let mut new_delta: Vec<f64> = self.calc_biases_dot(&self.weights[l - 1], &delta);
-            for i in 0..new_delta.len() {
-                // ReLU derivative
-                new_delta[i] *= if z[i] > 0.0 { 1.0 } else { 0.0 };
-            }
-
-            grads_b[l - 2] = new_delta.clone();
-            // grads_w[l - 2] = self.calc_weights_dot(&delta, &activations[l]);
-
-            delta = new_delta;
-        }
-
-        (grads_w, grads_b)
-    }
-
     pub fn update_mini_batch(mut self, inputs: Vec<Vec<f64>>, labels: Vec<u8>, learning_rate: f64) {
         let mut grads_w: Vec<Vec<Vec<f64>>> = vec![Vec::new(); self.weights.len()];
         let mut grads_b: Vec<Vec<f64>> = vec![Vec::new(); self.biases.len()];
@@ -205,12 +207,16 @@ impl Model {
             let input = inputs[i].clone();
             let label = labels[i];
             let (delta_grads_w, delta_grads_b) = self.backprop(input, label);
-            // grads_w = self.add_matrices(&grads_w, &delta_grads_w);
+            for (i, grad_layer) in delta_grads_w.iter().enumerate() {
+                grads_w[i] = self.add_matrices(&grads_w[i], grad_layer);
+            }
             grads_b = self.add_matrices(&grads_b, &delta_grads_b);
         }
 
         self.biases = self.gradient_descent_step(&self.biases, &grads_b, learning_rate);
-        // self.weights = self.gradient_descent_step(&self.weights, &grads_w, learning_rate);
+        for (i, grad_layer) in grads_w.iter().enumerate() {
+            self.weights[i] = self.gradient_descent_step(&self.weights[i], &grad_layer, learning_rate);
+        }
     }
 
     pub fn predict(&self, input: Vec<f64>) -> (u8, f64) {
@@ -253,16 +259,23 @@ mod tests {
             grads_b,
             vec![
                 vec![0.3390000000000001, 0.8210000000000002, 1.3030000000000002], // 2 → 3
-                vec![1.4300000000000002, 0.9800000000000002] // 3 → 2
+                vec![1.4300000000000002, 0.9800000000000002]                      // 3 → 2
             ]
         );
 
-        //        assert_eq!(
-        //            grads_w,
-        //            vec![
-        //                vec![0.379, 0.758, 0.909, 1.818, 1.439, 2.878], // 2 → 3
-        //                vec![2.869, 3.624, 1.51, 2.166, 2.736, 1.14]    // 3 → 2
-        //            ]
-        //        );
+        assert_eq!(
+            grads_w,
+            vec![
+                vec![
+                    vec![0.3390000000000001, 0.6780000000000002],
+                    vec![0.8210000000000002, 1.6420000000000003],
+                    vec![1.3030000000000002, 2.6060000000000003]
+                ], // 2 → 3
+                vec![
+                    vec![1.5730000000000004, 3.432000000000001, 1.4300000000000002],
+                    vec![1.0780000000000003, 2.3520000000000008, 0.9800000000000002]
+                ] // 3 → 2
+            ]
+        );
     }
 }
