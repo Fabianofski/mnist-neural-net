@@ -1,7 +1,12 @@
 mod model;
 
+use std::usize;
+
 use csv::StringRecord;
 use model::Model;
+use rand::thread_rng;
+use rand::seq::SliceRandom;
+use indicatif::ProgressIterator;
 
 fn save_as_image(label: u8, record: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
     let mut img = image::ImageBuffer::new(28, 28);
@@ -28,27 +33,57 @@ fn record_to_data(record: StringRecord) -> (u8, Vec<f64>) {
     (label, pixels)
 }
 
-fn main() {
-    let model: Model = Model::new(vec![784, 16, 16, 10]);
-    let batch_size = 32;
-    let mut inputs: Vec<Vec<f64>> = Vec::new();
-    let mut labels: Vec<u8> = Vec::new();
+fn load_data_from_csv(path: &str) -> Vec<(u8, Vec<f64>)> {
+    let mut inputs: Vec<(u8, Vec<f64>)> = Vec::new();
 
-    let mut rdr = csv::Reader::from_path("src/mnist_test.csv").unwrap();
-
-    for (i, record) in rdr.records().enumerate() {
+    let mut rdr = csv::Reader::from_path(path).unwrap();
+    for record in rdr.records() {
         let data = record.unwrap();
-        let (label, pixels) = record_to_data(data);
-
-        inputs.push(pixels);
-        labels.push(label);
-
-        if i == batch_size - 1 {
-            break;
-        }
+        let input = record_to_data(data);
+        inputs.push(input);
     }
 
-    model.update_mini_batch(inputs, labels, 0.0001);
+    inputs
+}
+
+fn train_model(
+    model: &mut Model,
+    inputs_train: Vec<(u8, Vec<f64>)>,
+    batch_size: usize,
+    epochs: u8,
+) {
+
+    for epoch in 1..=epochs {
+        println!("Starting Epoch: {}", epoch);
+
+        let mut shuffled = inputs_train.clone();
+        shuffled.shuffle(&mut thread_rng());
+
+        for batch in (0..shuffled.len()).step_by(batch_size).progress() {
+            let end = usize::min(batch+32, shuffled.len() - 1);
+            let inputs: Vec<(u8, Vec<f64>)> = shuffled[batch..end].to_vec();
+            model.update_mini_batch(inputs, 0.1);
+            println!("Weights: {:?}", model.weights[2][0]);
+        }
+        let accuracy = model.check_accuracy(inputs_train.clone());
+        println!("Train Accuracy: {:2}%\n", accuracy);
+    }
+}
+
+fn main() {
+    let mut model: Model = Model::new(vec![784, 16, 16, 10]);
+
+    let inputs_train = load_data_from_csv("src/mnist_train.csv");
+    // let inputs_val = load_data_from_csv("src/mnist_val.csv");
+    let inputs_test = load_data_from_csv("src/mnist_test.csv");
+
+    let batch_size: usize = 32;
+    let epochs = 12;
+
+    train_model(&mut model, inputs_train, batch_size, epochs);
+
+    let accuracy = model.check_accuracy(inputs_test.clone());
+    println!("Test Accuracy: {:2}%\n", accuracy);
 }
 
 #[cfg(test)]

@@ -27,10 +27,10 @@ impl Model {
             biases.push(Model::generate_rand(*biases_size));
         }
 
-        for i in 0..layer_sizes.len() - 1 {
+        for i in 1..layer_sizes.len() {
             let mut layer_weights: Vec<Vec<f64>> = Vec::new();
             for _ in 0..layer_sizes[i] {
-                layer_weights.push(Model::generate_rand(layer_sizes[i]));
+                layer_weights.push(Model::generate_rand(layer_sizes[i - 1]));
             }
             weights.push(layer_weights);
         }
@@ -199,13 +199,20 @@ impl Model {
             .collect()
     }
 
-    pub fn update_mini_batch(mut self, inputs: Vec<Vec<f64>>, labels: Vec<u8>, learning_rate: f64) {
-        let mut grads_w: Vec<Vec<Vec<f64>>> = vec![Vec::new(); self.weights.len()];
-        let mut grads_b: Vec<Vec<f64>> = vec![Vec::new(); self.biases.len()];
+    pub fn update_mini_batch(&mut self, inputs: Vec<(u8, Vec<f64>)>, learning_rate: f64) {
+        let mut grads_w: Vec<Vec<Vec<f64>>> = self
+            .weights
+            .iter()
+            .map(|layer| layer.iter().map(|neuron| vec![0.0; neuron.len()]).collect())
+            .collect();
+        let mut grads_b: Vec<Vec<f64>> = self
+            .biases
+            .iter()
+            .map(|layer| vec![0.0; layer.len()])
+            .collect();
 
         for i in 0..inputs.len() {
-            let input = inputs[i].clone();
-            let label = labels[i];
+            let (label, input) = inputs[i].clone();
             let (delta_grads_w, delta_grads_b) = self.backprop(input, label);
             for (i, grad_layer) in delta_grads_w.iter().enumerate() {
                 grads_w[i] = self.add_matrices(&grads_w[i], grad_layer);
@@ -215,8 +222,10 @@ impl Model {
 
         self.biases = self.gradient_descent_step(&self.biases, &grads_b, learning_rate);
         for (i, grad_layer) in grads_w.iter().enumerate() {
-            self.weights[i] = self.gradient_descent_step(&self.weights[i], &grad_layer, learning_rate);
+            self.weights[i] =
+                self.gradient_descent_step(&self.weights[i], &grad_layer, learning_rate);
         }
+        println!("Weights 1: {:?}", self.weights[2][0]);
     }
 
     pub fn predict(&self, input: Vec<f64>) -> (u8, f64) {
@@ -233,6 +242,20 @@ impl Model {
         }
 
         (label, score)
+    }
+
+    pub fn check_accuracy(&self, inputs: Vec<(u8, Vec<f64>)>) -> f64 {
+        let mut correct = 0.0;
+        let total = inputs.len() as f64;
+
+        for (label, input) in inputs {
+            let (pred_label, score) = self.predict(input);
+            if pred_label == label {
+                correct += 1.0;
+            }
+        }
+
+        correct / total
     }
 }
 
