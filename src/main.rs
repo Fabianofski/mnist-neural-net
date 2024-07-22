@@ -8,20 +8,6 @@ use model::Model;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 
-fn save_as_image(label: u8, record: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
-    let mut img = image::ImageBuffer::new(28, 28);
-
-    for (i, &pixel) in record.iter().enumerate() {
-        let x = (i) % 28;
-        let y = (i) / 28;
-        img.put_pixel(x as u32, y as u32, image::Luma([pixel]));
-    }
-
-    let name = format!("label-{}.png", label);
-    img.save(name)?;
-
-    Ok(())
-}
 
 fn record_to_data(record: StringRecord) -> (u8, Vec<f64>) {
     let label = record[0].parse::<u8>().unwrap();
@@ -84,17 +70,17 @@ fn training_cycle(inputs_train: Vec<(u8, Vec<f64>)>, inputs_test: Vec<(u8, Vec<f
 }
 
 fn main() {
-    let inputs_train = load_data_from_csv("src/mnist_train.csv");
-    let inputs_test = load_data_from_csv("src/mnist_test.csv");
-
+    let mut inputs_test = load_data_from_csv("src/mnist_test.csv");
     let training: bool = false;
 
     if training {
+        let inputs_train = load_data_from_csv("src/mnist_train.csv");
         training_cycle(inputs_train, inputs_test);
     } else {
         let model: Model = Model::load("model-12.json").unwrap();
-        let (label, pixels) = inputs_test[0].clone();
-        let (pred_label, pred_score) = model.predict(pixels);
+        inputs_test.shuffle(&mut thread_rng());
+        let (label, pixels) = inputs_test.first().unwrap();
+        let (pred_label, pred_score) = model.predict(pixels.clone());
         println!("Prediction: {}, {:.2}", pred_label, pred_score);
         println!("Label: {}", label);
     }

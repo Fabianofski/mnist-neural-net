@@ -179,7 +179,7 @@ impl Model {
             delta = self.calc_biases_dot(&self.weights[l], &delta);
             for i in 0..delta.len() {
                 // ReLU derivative
-               delta[i] *= if z[i] > 0.0 { 1.0 } else { 0.0 };
+                delta[i] *= if z[i] > 0.0 { 1.0 } else { 0.0 };
             }
         }
 
@@ -238,12 +238,32 @@ impl Model {
         let batch_size = inputs.len() as f64;
         self.biases = self.gradient_descent_step(&self.biases, &grads_b, batch_size, learning_rate);
         for (i, grad_layer) in grads_w.iter().enumerate() {
-            self.weights[i] =
-                self.gradient_descent_step(&self.weights[i], &grad_layer, batch_size, learning_rate);
+            self.weights[i] = self.gradient_descent_step(
+                &self.weights[i],
+                &grad_layer,
+                batch_size,
+                learning_rate,
+            );
+        }
+    }
+
+    fn draw(label: u8, record: Vec<f64>) {
+        println!("Label: {}", label);
+        let chars = [' ', '.', ':', '-', '=', '+', '*', '#', '%', '@'];
+        for (i, &pixel) in record.iter().enumerate() {
+            print!(
+                "{:<2}",
+                chars[(pixel * (chars.len() - 1) as f64).round() as usize]
+            );
+            if (i + 1) % 28 == 0 {
+                println!();
+            }
         }
     }
 
     pub fn predict(&self, input: Vec<f64>) -> (u8, f64) {
+        Model::draw(0, input.clone());
+
         let activations = self.feed_forward(input, true);
         let output_layer = self.soft_max(&activations.last().unwrap());
 
