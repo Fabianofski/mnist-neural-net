@@ -3,10 +3,10 @@ mod model;
 use std::usize;
 
 use csv::StringRecord;
-use model::Model;
-use rand::thread_rng;
-use rand::seq::SliceRandom;
 use indicatif::ProgressIterator;
+use model::Model;
+use rand::seq::SliceRandom;
+use rand::thread_rng;
 
 fn save_as_image(label: u8, record: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
     let mut img = image::ImageBuffer::new(28, 28);
@@ -52,38 +52,52 @@ fn train_model(
     batch_size: usize,
     epochs: u8,
 ) {
-
     for epoch in 1..=epochs {
-        println!("Starting Epoch: {}", epoch);
+        println!("Epoch: {}", epoch);
 
         let mut shuffled = inputs_train.clone();
         shuffled.shuffle(&mut thread_rng());
 
         for batch in (0..shuffled.len()).step_by(batch_size).progress() {
-            let end = usize::min(batch+32, shuffled.len() - 1);
+            let end = usize::min(batch + batch_size, shuffled.len() - 1);
             let inputs: Vec<(u8, Vec<f64>)> = shuffled[batch..end].to_vec();
-            model.update_mini_batch(inputs, 0.1);
-            println!("Weights: {:?}", model.weights[2][0]);
+            model.update_mini_batch(inputs, 0.01);
         }
         let accuracy = model.check_accuracy(inputs_train.clone());
-        println!("Train Accuracy: {:2}%\n", accuracy);
+        println!("Train Accuracy: {:.2}%\n", accuracy * 100.0);
+        model
+            .save(format!("model-{}.json", epoch).as_str())
+            .unwrap();
     }
 }
 
-fn main() {
+fn training_cycle(inputs_train: Vec<(u8, Vec<f64>)>, inputs_test: Vec<(u8, Vec<f64>)>) {
     let mut model: Model = Model::new(vec![784, 16, 16, 10]);
 
-    let inputs_train = load_data_from_csv("src/mnist_train.csv");
-    // let inputs_val = load_data_from_csv("src/mnist_val.csv");
-    let inputs_test = load_data_from_csv("src/mnist_test.csv");
-
-    let batch_size: usize = 32;
+    let batch_size: usize = 64;
     let epochs = 12;
 
     train_model(&mut model, inputs_train, batch_size, epochs);
 
     let accuracy = model.check_accuracy(inputs_test.clone());
-    println!("Test Accuracy: {:2}%\n", accuracy);
+    println!("Test Accuracy {:.2}\n", accuracy * 100.0);
+}
+
+fn main() {
+    let inputs_train = load_data_from_csv("src/mnist_train.csv");
+    let inputs_test = load_data_from_csv("src/mnist_test.csv");
+
+    let training: bool = false;
+
+    if training {
+        training_cycle(inputs_train, inputs_test);
+    } else {
+        let model: Model = Model::load("model-12.json").unwrap();
+        let (label, pixels) = inputs_test[0].clone();
+        let (pred_label, pred_score) = model.predict(pixels);
+        println!("Prediction: {}, {:.2}", pred_label, pred_score);
+        println!("Label: {}", label);
+    }
 }
 
 #[cfg(test)]

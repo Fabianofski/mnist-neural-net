@@ -1,6 +1,9 @@
 use rand::Rng;
+use serde::{Deserialize, Serialize};
+use std::fs::File;
+use std::io::{self, Read, Write};
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Model {
     pub weights: Vec<Vec<Vec<f64>>>,
     pub biases: Vec<Vec<f64>>,
@@ -13,7 +16,7 @@ impl Model {
         let mut vec: Vec<f64> = Vec::new();
 
         for _ in 0..size {
-            vec.push(rng.gen::<f64>());
+            vec.push(rng.gen_range(-1.0..1.0));
         }
 
         vec
@@ -24,7 +27,7 @@ impl Model {
         let mut weights: Vec<Vec<Vec<f64>>> = Vec::new();
 
         for biases_size in layer_sizes.iter().skip(1) {
-            biases.push(Model::generate_rand(*biases_size));
+            biases.push(vec![0.0; *biases_size as usize]);
         }
 
         for i in 1..layer_sizes.len() {
@@ -40,6 +43,21 @@ impl Model {
             biases,
             layer_sizes,
         }
+    }
+
+    pub fn save(&self, filename: &str) -> io::Result<()> {
+        let json = serde_json::to_string(self)?;
+        let mut file = File::create(filename)?;
+        file.write_all(json.as_bytes())?;
+        Ok(())
+    }
+
+    pub fn load(filename: &str) -> io::Result<Self> {
+        let mut file = File::open(filename)?;
+        let mut json = String::new();
+        file.read_to_string(&mut json)?;
+        let data: Model = serde_json::from_str(&json)?;
+        Ok(data)
     }
 
     fn calculate_activation(
@@ -144,29 +162,25 @@ impl Model {
     }
 
     pub fn backprop(&self, input: Vec<f64>, label: u8) -> (Vec<Vec<Vec<f64>>>, Vec<Vec<f64>>) {
-        let layers = self.layer_sizes.len();
-        let mut grads_w: Vec<Vec<Vec<f64>>> = vec![Vec::new(); layers - 1];
-        let mut grads_b: Vec<Vec<f64>> = vec![Vec::new(); layers - 1];
+        let layers = self.layer_sizes.len() - 1;
+        let mut grads_w: Vec<Vec<Vec<f64>>> = vec![Vec::new(); layers];
+        let mut grads_b: Vec<Vec<f64>> = vec![Vec::new(); layers];
 
         let activations = self.feed_forward(input.clone(), true);
         let zs: Vec<Vec<f64>> = self.feed_forward(input.clone(), false);
 
-        let mut delta = self.delta(&activations[layers - 1], label);
-        grads_b[layers - 2] = delta.clone();
-        grads_w[layers - 2] = self.calc_weights_dot(&delta, &activations[layers - 2]);
+        let mut delta = self.delta(&activations[layers], label);
 
-        for l in (2..(layers)).rev() {
-            let z = zs[l - 1].clone();
-            let mut new_delta: Vec<f64> = self.calc_biases_dot(&self.weights[l - 1], &delta);
-            for i in 0..new_delta.len() {
+        for l in (0..layers).rev() {
+            grads_b[l] = delta.clone();
+            grads_w[l] = self.calc_weights_dot(&delta, &activations[l]);
+
+            let z = zs[l].clone();
+            delta = self.calc_biases_dot(&self.weights[l], &delta);
+            for i in 0..delta.len() {
                 // ReLU derivative
-                new_delta[i] *= if z[i] > 0.0 { 1.0 } else { 0.0 };
+               delta[i] *= if z[i] > 0.0 { 1.0 } else { 0.0 };
             }
-
-            grads_b[l - 2] = new_delta.clone();
-            grads_w[l - 2] = self.calc_weights_dot(&new_delta, &activations[l - 2]);
-
-            delta = new_delta;
         }
 
         (grads_w, grads_b)
@@ -176,12 +190,13 @@ impl Model {
         &self,
         params: &Vec<Vec<f64>>,
         grads: &Vec<Vec<f64>>,
+        batch_size: f64,
         learning_rate: f64,
     ) -> Vec<Vec<f64>> {
         let mut new_params: Vec<Vec<f64>> = params.clone();
         for (i, grad_layer) in grads.iter().enumerate() {
             for (j, grad) in grad_layer.iter().enumerate() {
-                new_params[i][j] -= learning_rate * grad;
+                new_params[i][j] -= learning_rate * (grad / batch_size);
             }
         }
         new_params
@@ -220,12 +235,12 @@ impl Model {
             grads_b = self.add_matrices(&grads_b, &delta_grads_b);
         }
 
-        self.biases = self.gradient_descent_step(&self.biases, &grads_b, learning_rate);
+        let batch_size = inputs.len() as f64;
+        self.biases = self.gradient_descent_step(&self.biases, &grads_b, batch_size, learning_rate);
         for (i, grad_layer) in grads_w.iter().enumerate() {
             self.weights[i] =
-                self.gradient_descent_step(&self.weights[i], &grad_layer, learning_rate);
+                self.gradient_descent_step(&self.weights[i], &grad_layer, batch_size, learning_rate);
         }
-        println!("Weights 1: {:?}", self.weights[2][0]);
     }
 
     pub fn predict(&self, input: Vec<f64>) -> (u8, f64) {
@@ -249,7 +264,7 @@ impl Model {
         let total = inputs.len() as f64;
 
         for (label, input) in inputs {
-            let (pred_label, score) = self.predict(input);
+            let (pred_label, _) = self.predict(input);
             if pred_label == label {
                 correct += 1.0;
             }
