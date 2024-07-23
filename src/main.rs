@@ -37,6 +37,7 @@ fn train_model(
     model: &mut Model,
     inputs_train: Vec<(u8, Vec<f64>)>,
     batch_size: usize,
+    learning_rate: f64,
     epochs: u8,
 ) {
     for epoch in 1..=epochs {
@@ -48,12 +49,12 @@ fn train_model(
         for batch in (0..shuffled.len()).step_by(batch_size).progress() {
             let end = usize::min(batch + batch_size, shuffled.len() - 1);
             let inputs: Vec<(u8, Vec<f64>)> = shuffled[batch..end].to_vec();
-            model.update_mini_batch(inputs, 0.01);
+            model.update_mini_batch(inputs, learning_rate);
         }
         let accuracy = model.check_accuracy(inputs_train.clone());
         println!("Train Accuracy: {:.2}%\n", accuracy * 100.0);
         model
-            .save(format!("model-{}.json", epoch).as_str())
+            .save(format!("models/model-{}.json", epoch).as_str())
             .unwrap();
     }
 }
@@ -63,8 +64,9 @@ fn training_cycle(inputs_train: Vec<(u8, Vec<f64>)>, inputs_test: Vec<(u8, Vec<f
 
     let batch_size: usize = 64;
     let epochs = 12;
+    let learning_rate = 0.01;
 
-    train_model(&mut model, inputs_train, batch_size, epochs);
+    train_model(&mut model, inputs_train, batch_size, learning_rate, epochs);
 
     let accuracy = model.check_accuracy(inputs_test.clone());
     println!("Test Accuracy {:.2}\n", accuracy * 100.0);
@@ -78,10 +80,10 @@ fn main() {
         let inputs_train = load_data_from_csv("src/mnist_train.csv");
         training_cycle(inputs_train, inputs_test);
     } else {
-        let model: Model = Model::load("model-12.json").unwrap();
+        let model: Model = Model::load("models/model-12.json").unwrap();
         inputs_test.shuffle(&mut thread_rng());
         let (label, pixels) = inputs_test.first().unwrap();
-        let (pred_label, pred_score) = model.predict(pixels.clone());
+        let (pred_label, pred_score) = model.predict(pixels.clone(), true);
         println!("Prediction: {}, {:.2}", pred_label, pred_score);
         println!("Label: {}", label);
     }

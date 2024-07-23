@@ -202,8 +202,10 @@ impl Model {
         }
     }
 
-    pub fn predict(&self, input: Vec<f64>) -> (u8, f64) {
-        utils::draw_input_to_screen(input.clone());
+    pub fn predict(&self, input: Vec<f64>, draw_input: bool) -> (u8, f64) {
+        if draw_input {
+            utils::draw_input_to_screen(input.clone());
+        }
 
         let activations = self.feed_forward(input, true);
         let output_layer = utils::soft_max(&activations.last().unwrap());
@@ -225,7 +227,7 @@ impl Model {
         let total = inputs.len() as f64;
 
         for (label, input) in inputs {
-            let (pred_label, _) = self.predict(input);
+            let (pred_label, _) = self.predict(input, false);
             if pred_label == label {
                 correct += 1.0;
             }
