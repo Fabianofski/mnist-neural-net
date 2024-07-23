@@ -1,4 +1,4 @@
-use rand::Rng;
+use crate::utils;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{self, Read, Write};
@@ -11,17 +11,6 @@ pub struct Model {
 }
 
 impl Model {
-    fn generate_rand(size: u32) -> Vec<f64> {
-        let mut rng = rand::thread_rng();
-        let mut vec: Vec<f64> = Vec::new();
-
-        for _ in 0..size {
-            vec.push(rng.gen_range(-1.0..1.0));
-        }
-
-        vec
-    }
-
     pub fn new(layer_sizes: Vec<u32>) -> Model {
         let mut biases: Vec<Vec<f64>> = Vec::new();
         let mut weights: Vec<Vec<Vec<f64>>> = Vec::new();
@@ -33,7 +22,7 @@ impl Model {
         for i in 1..layer_sizes.len() {
             let mut layer_weights: Vec<Vec<f64>> = Vec::new();
             for _ in 0..layer_sizes[i] {
-                layer_weights.push(Model::generate_rand(layer_sizes[i - 1]));
+                layer_weights.push(utils::generate_rand_vec(layer_sizes[i - 1]));
             }
             weights.push(layer_weights);
         }
@@ -81,16 +70,6 @@ impl Model {
         activation
     }
 
-    fn soft_max(&self, vector: &Vec<f64>) -> Vec<f64> {
-        let total: f64 = vector.iter().sum();
-        let mut soft_maxed: Vec<f64> = Vec::new();
-
-        for value in vector.iter() {
-            soft_maxed.push(value / total);
-        }
-        soft_maxed
-    }
-
     fn feed_forward(&self, input: Vec<f64>, apply_relu: bool) -> Vec<Vec<f64>> {
         let mut activations: Vec<Vec<f64>> = vec![input];
         for (i, layer_size) in self.layer_sizes.iter().skip(1).enumerate() {
@@ -115,7 +94,7 @@ impl Model {
         activations
     }
 
-    fn delta(&self, output_layer: &Vec<f64>, label: u8) -> Vec<f64> {
+    fn delta(output_layer: &Vec<f64>, label: u8) -> Vec<f64> {
         let mut delta: Vec<f64> = Vec::new();
         for (i, node) in output_layer.iter().enumerate() {
             let desired = if i as u8 == label { 1.0 } else { 0.0 };
@@ -124,7 +103,7 @@ impl Model {
         delta
     }
 
-    fn calc_weights_dot(&self, delta: &Vec<f64>, activations: &Vec<f64>) -> Vec<Vec<f64>> {
+    fn calc_weights_dot(delta: &Vec<f64>, activations: &Vec<f64>) -> Vec<Vec<f64>> {
         let mut grads: Vec<Vec<f64>> = Vec::new();
         for desired in delta.iter() {
             let mut grad: Vec<f64> = Vec::new();
@@ -136,21 +115,9 @@ impl Model {
         grads
     }
 
-    fn transpose(&self, matrix: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
-        let mut transposed: Vec<Vec<f64>> = vec![vec![0.0; matrix.len()]; matrix[0].len()];
-
-        for (i, row) in matrix.iter().enumerate() {
-            for (j, &val) in row.iter().enumerate() {
-                transposed[j][i] = val;
-            }
-        }
-
-        transposed
-    }
-
-    fn calc_biases_dot(&self, weights: &Vec<Vec<f64>>, delta: &Vec<f64>) -> Vec<f64> {
+    fn calc_biases_dot(weights: &Vec<Vec<f64>>, delta: &Vec<f64>) -> Vec<f64> {
         let mut grads: Vec<f64> = Vec::new();
-        let weights_t = self.transpose(weights);
+        let weights_t = utils::transpose(weights);
         for (_, weight) in weights_t.iter().enumerate() {
             let mut sum = 0.0;
             for (j, node) in weight.iter().enumerate() {
@@ -169,14 +136,14 @@ impl Model {
         let activations = self.feed_forward(input.clone(), true);
         let zs: Vec<Vec<f64>> = self.feed_forward(input.clone(), false);
 
-        let mut delta = self.delta(&activations[layers], label);
+        let mut delta = Model::delta(&activations[layers], label);
 
         for l in (0..layers).rev() {
             grads_b[l] = delta.clone();
-            grads_w[l] = self.calc_weights_dot(&delta, &activations[l]);
+            grads_w[l] = Model::calc_weights_dot(&delta, &activations[l]);
 
             let z = zs[l].clone();
-            delta = self.calc_biases_dot(&self.weights[l], &delta);
+            delta = Model::calc_biases_dot(&self.weights[l], &delta);
             for i in 0..delta.len() {
                 // ReLU derivative
                 delta[i] *= if z[i] > 0.0 { 1.0 } else { 0.0 };
@@ -187,7 +154,6 @@ impl Model {
     }
 
     fn gradient_descent_step(
-        &self,
         params: &Vec<Vec<f64>>,
         grads: &Vec<Vec<f64>>,
         batch_size: f64,
@@ -200,18 +166,6 @@ impl Model {
             }
         }
         new_params
-    }
-
-    fn add_matrices(&self, mat1: &Vec<Vec<f64>>, mat2: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
-        mat1.iter()
-            .zip(mat2.iter())
-            .map(|(row1, row2)| {
-                row1.iter()
-                    .zip(row2.iter())
-                    .map(|(val1, val2)| val1 + val2)
-                    .collect()
-            })
-            .collect()
     }
 
     pub fn update_mini_batch(&mut self, inputs: Vec<(u8, Vec<f64>)>, learning_rate: f64) {
@@ -230,15 +184,16 @@ impl Model {
             let (label, input) = inputs[i].clone();
             let (delta_grads_w, delta_grads_b) = self.backprop(input, label);
             for (i, grad_layer) in delta_grads_w.iter().enumerate() {
-                grads_w[i] = self.add_matrices(&grads_w[i], grad_layer);
+                grads_w[i] = utils::add_matrices(&grads_w[i], grad_layer);
             }
-            grads_b = self.add_matrices(&grads_b, &delta_grads_b);
+            grads_b = utils::add_matrices(&grads_b, &delta_grads_b);
         }
 
         let batch_size = inputs.len() as f64;
-        self.biases = self.gradient_descent_step(&self.biases, &grads_b, batch_size, learning_rate);
+        self.biases =
+            Model::gradient_descent_step(&self.biases, &grads_b, batch_size, learning_rate);
         for (i, grad_layer) in grads_w.iter().enumerate() {
-            self.weights[i] = self.gradient_descent_step(
+            self.weights[i] = Model::gradient_descent_step(
                 &self.weights[i],
                 &grad_layer,
                 batch_size,
@@ -247,25 +202,11 @@ impl Model {
         }
     }
 
-    fn draw(label: u8, record: Vec<f64>) {
-        println!("Label: {}", label);
-        let chars = [' ', '.', ':', '-', '=', '+', '*', '#', '%', '@'];
-        for (i, &pixel) in record.iter().enumerate() {
-            print!(
-                "{:<2}",
-                chars[(pixel * (chars.len() - 1) as f64).round() as usize]
-            );
-            if (i + 1) % 28 == 0 {
-                println!();
-            }
-        }
-    }
-
     pub fn predict(&self, input: Vec<f64>) -> (u8, f64) {
-        Model::draw(0, input.clone());
+        utils::draw_input_to_screen(input.clone());
 
         let activations = self.feed_forward(input, true);
-        let output_layer = self.soft_max(&activations.last().unwrap());
+        let output_layer = utils::soft_max(&activations.last().unwrap());
 
         let mut label: u8 = 0;
         let mut score: f64 = f64::MIN;
